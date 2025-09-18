@@ -16,6 +16,10 @@ jobs:
     name: Build, Test, Docker Push, Update GitOps
     runs-on: ubuntu-24.04
 
+    env:
+      # GitOps Helm values.yaml 경로
+      GITOPS_REPO_PATH: petclinic-gitops-manifests/petclinic-app/values.yaml
+
     steps:
       # 1. 소스 코드 체크아웃
       - name: Checkout application code
@@ -53,29 +57,28 @@ jobs:
           docker push $DOCKER_REPO:$IMAGE_TAG
           echo "Image pushed successfully to Docker Hub."
 
-      # 6. GitOps Repository 업데이트 (Helm Chart values.yaml 이미지 태그 변경) - PAT 사용
-      - name: Update GitOps repository with new image tag
+      # 6. GitOps Repository 업데이트 (Helm Chart values.yaml) - PAT 사용
+      - name: Update GitOps Helm values.yaml
         env:
-          GITOPS_REPO_URL: "https://github.com/${{ github.repository_owner }}/gitops-repo.git"
-          NEW_IMAGE_FULL_PATH: "${{ secrets.DOCKER_USERNAME }}/petclinic:${{ github.sha }}" # Docker Hub 사용 시
           GITOPS_REPO_PAT: ${{ secrets.GITOPS_REPO_PAT }}
+          IMAGE_TAG: ${{ github.sha }}
+          DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic
         run: |
           echo "Cloning GitOps repository using PAT..."
           git clone https://${GITOPS_REPO_PAT}@github.com/${{ github.repository_owner }}/gitops-repo.git gitops-repo-local
           cd gitops-repo-local
 
-          echo "Updating image tag in values.yaml..."
-          sed -i "s|^\([[:space:]]*tag:\).*|\1 \"${{ github.sha }}\"|" petclinic-app/values.yaml
+          echo "Installing yq for YAML editing..."
+          sudo apt-get update && sudo apt-get install -y yq
 
-          # Docker Hub 사용 시 repository 경로 업데이트 (ECR 사용하는 경우는 다른 sed 명령)
-          sed -i "s|^\([[:space:]]*repository:\).*|\1 \"${{ secrets.DOCKER_USERNAME }}/petclinic\"|" petclinic-app/values.yaml
+          echo "Updating image tag and repository in values.yaml..."
+          yq eval ".image.tag = strenv(IMAGE_TAG)" -i $GITOPS_REPO_PATH
+          yq eval ".image.repository = strenv(DOCKER_REPO)" -i $GITOPS_REPO_PATH
 
-          echo "Committing changes..."
+          echo "Committing and pushing changes to GitOps repository..."
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add petclinic-app/values.yaml
-          git commit -m "chore(CD): Update PetClinic image tag to ${{ github.sha }}" || echo "No changes to commit"
-
-          echo "Pushing changes to GitOps repository using PAT..."
+          git add $GITOPS_REPO_PATH
+          git commit -m "chore(CD): Update PetClinic image tag to $IMAGE_TAG" || echo "No changes to commit"
           git push https://${GITOPS_REPO_PAT}@github.com/${{ github.repository_owner }}/gitops-repo.git main
 
