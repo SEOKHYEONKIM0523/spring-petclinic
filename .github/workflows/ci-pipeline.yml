@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------------
-# GitHub Actions CI/CD: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시 + GitOps 업데이트 (PAT)
+# GitHub Actions CI/CD: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시 + GitOps 업데이트 (PAT 사용)
 # ----------------------------------------------------------------------------------
 name: PetClinic CI/CD Pipeline
 
@@ -52,7 +52,7 @@ jobs:
           docker push $DOCKER_REPO:$IMAGE_TAG
           echo "Image pushed successfully to Docker Hub."
 
-      # 6. GitOps Repository 업데이트 (Helm Chart values.yaml 수정 + push)
+      # 6. GitOps Repository 업데이트 (Helm Chart values.yaml 이미지 태그 변경) - PAT 사용 + pathspec 수정
       - name: Update GitOps repository with new image tag
         env:
           GITOPS_REPO_PAT: ${{ secrets.GITOPS_REPO_PAT }}
@@ -65,16 +65,17 @@ jobs:
           echo "Listing cloned repository structure for debugging..."
           ls -R gitops-repo-local
 
-          VALUES_PATH="gitops-repo-local/petclinic-gitops-manifests/petclinic-app/values.yaml"
-          echo "Checking if values.yaml exists at: $VALUES_PATH"
-          if [ ! -f "$VALUES_PATH" ]; then
-            echo "❌ ERROR: values.yaml not found at $VALUES_PATH"
+          # Helm values.yaml 경로 (git repo 내부 상대경로)
+          VALUES_PATH="petclinic-gitops-manifests/petclinic-app/values.yaml"
+          echo "Checking if values.yaml exists at: gitops-repo-local/$VALUES_PATH"
+          if [ ! -f "gitops-repo-local/$VALUES_PATH" ]; then
+            echo "❌ ERROR: values.yaml not found at gitops-repo-local/$VALUES_PATH"
             exit 1
           fi
 
           echo "Updating image tag and repository in values.yaml..."
-          sed -i "s|^\([[:space:]]*tag:\).*|\1 \"${IMAGE_TAG}\"|" $VALUES_PATH
-          sed -i "s|^\([[:space:]]*repository:\).*|\1 \"${DOCKER_REPO}\"|" $VALUES_PATH
+          sed -i "s|^\([[:space:]]*tag:\).*|\1 \"${IMAGE_TAG}\"|" gitops-repo-local/$VALUES_PATH
+          sed -i "s|^\([[:space:]]*repository:\).*|\1 \"${DOCKER_REPO}\"|" gitops-repo-local/$VALUES_PATH
 
           echo "Committing changes..."
           git -C gitops-repo-local config user.name "github-actions[bot]"
