@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------------
-# GitHub Actions CI/CD: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시 + GitOps 업데이트 (PAT 사용)
+# GitHub Actions CI/CD: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시 + GitOps 업데이트 (PAT + yq v4)
 # ----------------------------------------------------------------------------------
 name: PetClinic CI/CD Pipeline
 
@@ -52,22 +52,23 @@ jobs:
           docker push $DOCKER_REPO:$IMAGE_TAG
           echo "Image pushed successfully to Docker Hub."
 
-      # 6. GitOps Helm values.yaml 업데이트 (PAT 사용)
+      # 6. GitOps Helm values.yaml 업데이트 (PAT 사용 + yq v4)
       - name: Update GitOps Helm values.yaml
         env:
-          GITOPS_REPO_URL: "https://github.com/${{ github.repository_owner }}/gitops-repo.git"
           GITOPS_REPO_PAT: ${{ secrets.GITOPS_REPO_PAT }}
           IMAGE_TAG: ${{ github.sha }}
           DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic
         run: |
+          echo "Installing yq v4..."
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+          sudo chmod +x /usr/bin/yq
+          yq --version
+
           echo "Cloning GitOps repository using PAT..."
           git clone https://${GITOPS_REPO_PAT}@github.com/${{ github.repository_owner }}/gitops-repo.git gitops-repo-local
           
           # Helm values.yaml 경로
           VALUES_PATH="gitops-repo-local/petclinic-gitops-manifests/petclinic-app/values.yaml"
-
-          echo "Installing yq..."
-          sudo apt-get update && sudo apt-get install -y yq
 
           echo "Updating image tag and repository in values.yaml..."
           yq eval ".image.tag = strenv(IMAGE_TAG)" -i $VALUES_PATH
