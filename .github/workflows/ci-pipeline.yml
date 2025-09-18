@@ -52,33 +52,28 @@ jobs:
           docker push $DOCKER_REPO:$IMAGE_TAG
           echo "Image pushed successfully to Docker Hub."
 
-      # 6. GitOps Helm values.yaml 업데이트 (PAT 사용 + yq v4)
-      - name: Update GitOps Helm values.yaml
+      # 6. GitOps Repository 업데이트 (Helm Chart values.yaml 이미지 태그 변경) - PAT 사용 + VALUES_PATH 변수
+      - name: Update GitOps repository with new image tag
         env:
           GITOPS_REPO_PAT: ${{ secrets.GITOPS_REPO_PAT }}
           IMAGE_TAG: ${{ github.sha }}
           DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic
         run: |
-          echo "Installing yq v4..."
-          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
-          sudo chmod +x /usr/bin/yq
-          yq --version
-
           echo "Cloning GitOps repository using PAT..."
           git clone https://${GITOPS_REPO_PAT}@github.com/${{ github.repository_owner }}/gitops-repo.git gitops-repo-local
-          
+
           # Helm values.yaml 경로
           VALUES_PATH="gitops-repo-local/petclinic-gitops-manifests/petclinic-app/values.yaml"
 
           echo "Updating image tag and repository in values.yaml..."
-          yq eval ".image.tag = strenv(IMAGE_TAG)" -i $VALUES_PATH
-          yq eval ".image.repository = strenv(DOCKER_REPO)" -i $VALUES_PATH
+          sed -i "s|^\([[:space:]]*tag:\).*|\1 \"${IMAGE_TAG}\"|" $VALUES_PATH
+          sed -i "s|^\([[:space:]]*repository:\).*|\1 \"${DOCKER_REPO}\"|" $VALUES_PATH
 
           echo "Committing changes..."
           git -C gitops-repo-local config user.name "github-actions[bot]"
           git -C gitops-repo-local config user.email "github-actions[bot]@users.noreply.github.com"
           git -C gitops-repo-local add $VALUES_PATH
-          git -C gitops-repo-local commit -m "chore(CD): Update PetClinic image tag to $IMAGE_TAG" || echo "No changes to commit"
+          git -C gitops-repo-local commit -m "chore(CD): Update PetClinic image tag to ${IMAGE_TAG}" || echo "No changes to commit"
 
           echo "Pushing changes to GitOps repository using PAT..."
           git -C gitops-repo-local push https://${GITOPS_REPO_PAT}@github.com/${{ github.repository_owner }}/gitops-repo.git main
