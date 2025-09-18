@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------------
-# GitHub Actions CI/CD: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시 + GitOps 업데이트 (PAT + yq v4)
+# GitHub Actions CI/CD: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시 + GitOps 업데이트 (PAT)
 # ----------------------------------------------------------------------------------
 name: PetClinic CI/CD Pipeline
 
@@ -14,10 +14,10 @@ on:
 jobs:
   build-test-docker-update-gitops:
     name: Build, Test, Docker Push, Update GitOps
-    runs-on: ubuntu-24.04 # 최신 LTS 버전 사용
+    runs-on: ubuntu-24.04
 
     steps:
-      # 1. 애플리케이션 소스 코드 체크아웃
+      # 1. 소스 코드 체크아웃
       - name: Checkout application code
         uses: actions/checkout@v4
 
@@ -43,8 +43,8 @@ jobs:
       # 5. Docker 이미지 빌드 및 푸시
       - name: Build and Push Docker image
         env:
-          DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic # Docker Hub 사용자 이름과 리포지토리 이름 조합
-          IMAGE_TAG: ${{ github.sha }} # GitHub 커밋 SHA를 이미지 태그로 사용
+          DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building Docker image with tag: $IMAGE_TAG"
           docker build -t $DOCKER_REPO:$IMAGE_TAG .
@@ -52,39 +52,36 @@ jobs:
           docker push $DOCKER_REPO:$IMAGE_TAG
           echo "Image pushed successfully to Docker Hub."
 
-      # 6. yq 설치 (YAML 파일 수정을 위한 도구)
-      - name: Install yq
-        uses: mikefarah/yq@v4.44.1 # yq 최신 버전을 사용합니다.
-
-      # 7. GitOps Repository 업데이트 (Helm Chart values.yaml 이미지 태그 변경)
+      # 6. GitOps Repository 업데이트 (Helm Chart values.yaml 수정 + push)
       - name: Update GitOps repository with new image tag
         env:
-          GITOPS_REPO_PAT: ${{ secrets.GITOPS_REPO_PAT }} # GitOps 저장소 접근을 위한 PAT Secret
-          IMAGE_TAG: ${{ github.sha }} # Docker 이미지 태그로 사용할 커밋 SHA
-          DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic # Docker Hub 리포지토리 전체 경로
+          GITOPS_REPO_PAT: ${{ secrets.GITOPS_REPO_PAT }}
+          IMAGE_TAG: ${{ github.sha }}
+          DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic
         run: |
           echo "Cloning GitOps repository using PAT..."
-          # PAT를 사용하여 GitOps 저장소를 로컬에 클론
           git clone https://${GITOPS_REPO_PAT}@github.com/${{ github.repository_owner }}/gitops-repo.git gitops-repo-local
 
-          # Helm values.yaml 파일의 상대 경로 설정 (제공된 경로 기반)
+          echo "Listing cloned repository structure for debugging..."
+          ls -R gitops-repo-local
+
           VALUES_PATH="gitops-repo-local/petclinic-gitops-manifests/petclinic-app/values.yaml"
+          echo "Checking if values.yaml exists at: $VALUES_PATH"
+          if [ ! -f "$VALUES_PATH" ]; then
+            echo "❌ ERROR: values.yaml not found at $VALUES_PATH"
+            exit 1
+          fi
 
-          echo "Updating image tag and repository in values.yaml using yq..."
-          # yq를 사용하여 'image.tag' 및 'image.repository' 필드를 업데이트합니다.
-          # 제공된 values.yaml 구조에 따르면 이 경로는 정확합니다.
-          yq -i ".image.tag = \"${IMAGE_TAG}\"" $VALUES_PATH
-          yq -i ".image.repository = \"${DOCKER_REPO}\"" $VALUES_PATH
+          echo "Updating image tag and repository in values.yaml..."
+          sed -i "s|^\([[:space:]]*tag:\).*|\1 \"${IMAGE_TAG}\"|" $VALUES_PATH
+          sed -i "s|^\([[:space:]]*repository:\).*|\1 \"${DOCKER_REPO}\"|" $VALUES_PATH
 
-          echo "Committing changes to GitOps repository..."
-          # Git 사용자 정보 설정
+          echo "Committing changes..."
           git -C gitops-repo-local config user.name "github-actions[bot]"
           git -C gitops-repo-local config user.email "github-actions[bot]@users.noreply.github.com"
-          # 변경된 values.yaml 파일 추가
           git -C gitops-repo-local add $VALUES_PATH
-          # 변경 사항 커밋 (변경이 없으면 "No changes to commit" 메시지 출력)
           git -C gitops-repo-local commit -m "chore(CD): Update PetClinic image tag to ${IMAGE_TAG}" || echo "No changes to commit"
 
           echo "Pushing changes to GitOps repository using PAT..."
-          # GitOps 저장소로 변경 사항 푸시
           git -C gitops-repo-local push https://${GITOPS_REPO_PAT}@github.com/${{ github.repository_owner }}/gitops-repo.git main
+
