@@ -60,7 +60,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Cloning GitOps repository..."
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/petclinic-gitops-manifests.git gitops-repo-local
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/gitops-repo.git gitops-repo-local
           cd gitops-repo-local
 
           echo "Updating image tag in values.yaml using yq..."
