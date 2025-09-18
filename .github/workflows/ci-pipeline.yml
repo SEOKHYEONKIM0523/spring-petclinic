@@ -56,7 +56,7 @@ jobs:
       # 6. GitOps Helm values.yaml 업데이트
       - name: Update GitOps Helm values.yaml
         env:
-          GITOPS_REPO_URL: "https://github.com/${{ github.repository_owner }}/petclinic-gitops-manifests.git"
+          GITOPS_REPO_URL: "https://github.com/${{ github.repository_owner }}/gitops-repo.git"
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Cloning GitOps repository..."
