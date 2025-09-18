@@ -1,9 +1,8 @@
 # ----------------------------------------------------------------------------------
-# GitHub Actions CI 파이프라인: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시
+# GitHub Actions CI/CD: Spring PetClinic 빌드, 테스트, Docker 이미지 푸시 + GitOps 업데이트
 # ----------------------------------------------------------------------------------
-name: PetClinic CI Pipeline
+name: PetClinic CI/CD Pipeline
 
-# 워크플로우가 언제 실행될지 정의
 on:
   push:
     branches:
@@ -13,13 +12,13 @@ on:
       - main
 
 jobs:
-  build-and-push-image:
-    name: Build, Test, and Push Docker Image
+  build-test-docker-update-gitops:
+    name: Build, Test, Docker Push, Update GitOps
     runs-on: ubuntu-24.04
 
     steps:
       # 1. 소스 코드 체크아웃
-      - name: Checkout code
+      - name: Checkout application code
         uses: actions/checkout@v4
 
       # 2. Java (JDK 17) 환경 설정
@@ -42,7 +41,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       # 5. Docker 이미지 빌드 및 푸시
-      - name: Build and Push Docker image to Docker Hub
+      - name: Build and Push Docker image
         env:
           DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/petclinic
           IMAGE_TAG: ${{ github.sha }}
@@ -52,5 +51,27 @@ jobs:
 
           echo "Pushing Docker image to Docker Hub: $DOCKER_REPO:$IMAGE_TAG"
           docker push $DOCKER_REPO:$IMAGE_TAG
-
           echo "Image pushed successfully to Docker Hub."
+
+      # 6. GitOps Helm values.yaml 업데이트
+      - name: Update GitOps Helm values.yaml
+        env:
+          GITOPS_REPO_URL: "https://github.com/${{ github.repository_owner }}/petclinic-gitops-manifests.git"
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Cloning GitOps repository..."
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/petclinic-gitops-manifests.git gitops-repo-local
+          cd gitops-repo-local
+
+          echo "Updating image tag in values.yaml using yq..."
+          # yq 사용 → YAML 안전하게 수정
+          sudo apt-get update && sudo apt-get install -y yq
+          yq eval ".image.tag = strenv(IMAGE_TAG)" -i petclinic-app/values.yaml
+
+          echo "Committing and pushing changes to GitOps repository..."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add petclinic-app/values.yaml
+          git commit -m "chore(CD): Update PetClinic image tag to $IMAGE_TAG" || echo "No changes to commit"
+          git push origin main
+
